@@ -1,6 +1,5 @@
 import { jwtVerify } from 'jose';
 import { createSecretKey } from 'crypto';
-import { isRevoked } from './db.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const key = JWT_SECRET ? createSecretKey(Buffer.from(JWT_SECRET)) : null;
@@ -23,8 +22,6 @@ export async function verifyToken(token){
   if(!key || !token) return null;
   try{
     const { payload } = await jwtVerify(token, key);
-    // check revocation
-    try{ if(await isRevoked(token)) return null; } catch(e){ return null; }
     return payload || null;
   } catch(e){ return null; }
 }
@@ -39,7 +36,6 @@ export async function isAuthenticated(request){
   return !!payload;
 }
 
-// Convenience: require an authenticated admin; returns true/false
 export async function requireAdmin(request){
   return await isAuthenticated(request);
 }
