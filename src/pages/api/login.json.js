@@ -3,6 +3,8 @@
 import argon2 from 'argon2';
 import { SignJWT } from 'jose';
 import { createSecretKey } from 'crypto';
+import buildSecureHeaders from '../../lib/secure-headers.js';
+export const prerender = false;
 
 // Strong defaults and configuration
 const ADMIN_USER = process.env.ADMIN_USER || 'admin';
@@ -72,7 +74,7 @@ export async function post({ request }){
   const ip = getClientIP(request);
   const attemptKey = `${ip}:${username}`;
   if(isBlocked(attemptKey)){
-    return new Response(JSON.stringify({ message: 'Too many attempts, try later' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ message: 'Too many attempts, try later', reason: 'rate_limited' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
   }
 
   // Protect against user enumeration and timing attacks by always doing an Argon2 verify
@@ -97,7 +99,12 @@ export async function post({ request }){
 
   if(!passwordOk){
     recordFailure(attemptKey);
-    return new Response(JSON.stringify({ message: 'Invalid credentials' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    // Distinguish username vs password failures while preserving timing defenses.
+    if(username !== ADMIN_USER){
+      return new Response(JSON.stringify({ message: 'Unknown username', reason: 'user' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+    }
+    // username matches but password is wrong
+    return new Response(JSON.stringify({ message: 'Incorrect password', reason: 'password' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
   }
 
   // Successful login: clear attempts
@@ -116,8 +123,21 @@ export async function post({ request }){
   const cookieParts = [ `sa_token=${encodeURIComponent(token)}`, `HttpOnly`, `Path=/`, `Max-Age=${maxAge}`, `SameSite=Strict` ];
   if(isSecure) cookieParts.push('Secure');
 
-  const headers = new Headers({ 'Content-Type': 'application/json' });
+  // Attach secure headers for API responses
+  const allowUnsafe = process.env.NODE_ENV !== 'production';
+  const baseHeaders = buildSecureHeaders({ allowUnsafeInlineStyles: allowUnsafe });
+  const headers = new Headers({ ...baseHeaders, 'Content-Type': 'application/json' });
   headers.append('Set-Cookie', cookieParts.join('; '));
 
   return new Response(JSON.stringify({ message: 'ok' }), { status: 200, headers });
 }
+
+// Respond to GET with 405 Method Not Allowed to silence build-time warnings
+export async function get(){
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  return new Response(JSON.stringify({ message: 'Method Not Allowed' }), { status: 405, headers: { ...base, 'Content-Type': 'application/json' } });
+}
+
+// Uppercase aliases for Astro router compatibility
+export const GET = get;
+export const POST = post;

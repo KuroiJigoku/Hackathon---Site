@@ -1,12 +1,17 @@
 ---
 import '../../styles.css';
+import crypto from 'crypto';
+const nonce = crypto.randomBytes(16).toString('base64');
+const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
+const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
+const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' ${styleDirective}; img-src 'self' data:; connect-src 'self';`;
 ---
-<!-- Admin dashboard: upload CSV and view attendance. Protected client-side by checking /api/attendance. -->
 <html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard — Smart Attendance</title>
+    <meta http-equiv="Content-Security-Policy" content={csp} />
   </head>
   <body class="bg-dark">
     <main class="container card">
@@ -25,17 +30,17 @@ import '../../styles.css';
       </div>
 
       <h3>Attendance</h3>
-      <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
+      <div class="row toolbar">
         <label>Limit</label>
-        <input id="limit" type="number" min="1" max="5000" value="100" style="width:100px" />
+        <input id="limit" type="number" min="1" max="5000" value="100" class="small-input" />
         <label>Offset</label>
-        <input id="offset" type="number" min="0" value="0" style="width:100px" />
+        <input id="offset" type="number" min="0" value="0" class="small-input" />
         <button id="prevBtn" class="btn ghost">Prev</button>
         <button id="nextBtn" class="btn ghost">Next</button>
         <div id="pageInfo" class="muted"></div>
       </div>
 
-      <div id="uploadStatus" class="muted" style="margin-bottom:8px"></div>
+      <div id="uploadStatus" class="muted status"></div>
 
       <table id="table" class="table">
         <thead><tr><th>Name</th><th>ID</th><th>Date</th><th>Status</th></tr></thead>
@@ -43,7 +48,7 @@ import '../../styles.css';
       </table>
     </main>
 
-    <script type="module">
+    <script type="module" nonce={nonce}>
       // Dashboard client with pagination and upload result reporting
       const uploadBtn = document.getElementById('uploadBtn');
       const csvfile = document.getElementById('csvfile');

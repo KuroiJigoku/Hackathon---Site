@@ -3,6 +3,8 @@
 import { jwtVerify } from 'jose';
 import { createSecretKey } from 'crypto';
 import { insertRows, isRevoked } from '../../lib/db.js';
+import buildSecureHeaders from '../../lib/secure-headers.js';
+export const prerender = false;
 
 // JWT secret
 const JWT_SECRET = process.env.JWT_SECRET;
@@ -50,10 +52,14 @@ function validateRow(raw){
 export async function post({ request }){
   // If JWT secret is not configured, reject and instruct to configure env
   if(!JWT_SECRET){
-    return new Response(JSON.stringify({ message: 'Server misconfiguration: JWT_SECRET not set' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+    return new Response(JSON.stringify({ message: 'Server misconfiguration: JWT_SECRET not set' }), { status: 500, headers: { ...base, 'Content-Type': 'application/json' } });
   }
 
-  if(!await requireAuth(request)) return new Response(JSON.stringify({ message: 'unauth' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  if(!await requireAuth(request)){
+    const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+    return new Response(JSON.stringify({ message: 'unauth' }), { status: 401, headers: { ...base, 'Content-Type': 'application/json' } });
+  }
 
   let body;
   try { body = await request.json(); } catch(e){
@@ -67,14 +73,29 @@ export async function post({ request }){
     if(v) validated.push(v);
   }
 
-  if(validated.length === 0) return new Response(JSON.stringify({ message: 'No valid rows to append' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  if(validated.length === 0){
+    const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+    return new Response(JSON.stringify({ message: 'No valid rows to append' }), { status: 400, headers: { ...base, 'Content-Type': 'application/json' } });
+  }
 
   try{
     insertRows(validated);
   } catch(e){
-    return new Response(JSON.stringify({ message: 'Failed to persist attendance' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+    const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+    return new Response(JSON.stringify({ message: 'Failed to persist attendance' }), { status: 500, headers: { ...base, 'Content-Type': 'application/json' } });
   }
 
-  return new Response(JSON.stringify({ ok: true, appended: validated.length }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  return new Response(JSON.stringify({ ok: true, appended: validated.length }), { status: 200, headers: { ...base, 'Content-Type': 'application/json' } });
 }
+
+// Accept GET but return 405 for clients requesting wrong method
+export async function get(){
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  return new Response(JSON.stringify({ message: 'Method Not Allowed' }), { status: 405, headers: { ...base, 'Content-Type': 'application/json' } });
+}
+
+// Uppercase aliases for Astro router compatibility
+export const GET = get;
+export const POST = post;
 

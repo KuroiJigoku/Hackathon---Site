@@ -1,22 +1,43 @@
 /* Dark futuristic theme: black, red, maroon accents */
 :root{
-  --bg:#080808;
-  --panel:#0f0f11;
-  --accent:#ff2b2b; /* bright red */
-  --accent-dark:#8b0000; /* maroon */
-  --muted:#a29a9a;
+  --bg:#040405; /* near-black */
+  --panel:#0b0b0d; /* deep charcoal */
+  --accent:#ff3b3b; /* neon red */
+  --accent-2:#b00000; /* rich maroon */
+  --muted:#9a8f8f;
   --glass: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  --glow: 0 6px 30px rgba(183,24,24,0.12), inset 0 1px 0 rgba(255,255,255,0.02);
 }
 /* Basic resets */
 html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,'Helvetica Neue',Arial}
-body.bg-dark{background:radial-gradient(1200px 600px at 10% 10%, rgba(139,0,0,0.12), transparent), var(--bg); color:#f4f4f4}
+.gloss{background:radial-gradient(900px 420px at 6% 12%, rgba(176,0,0,0.10), transparent), radial-gradient(600px 240px at 90% 80%, rgba(59,0,0,0.05), transparent)}
+.bg-accent-gradient{background:linear-gradient(90deg, rgba(255,59,59,0.06), rgba(176,0,0,0.03));}
+
+/* Tiling: subtle grid / circuit pattern overlay to give a futuristic tiled look */
+body.bg-dark{
+  min-height:100vh;
+  color:#f4f4f4;
+  background-image:
+    radial-gradient(circle at 6% 12%, rgba(176,0,0,0.10), transparent 12%),
+    radial-gradient(circle at 90% 80%, rgba(59,0,0,0.05), transparent 12%),
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.01) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,0.01) 0 1px, transparent 1px 28px),
+    linear-gradient(180deg,var(--bg), #080408);
+  background-blend-mode: overlay, overlay, normal, normal, normal;
+}
 .container{max-width:980px;margin:48px auto;padding:28px}
-.card{background:var(--panel);border-radius:12px;padding:20px;box-shadow:0 6px 30px rgba(0,0,0,0.6);border:1px solid rgba(255,0,0,0.06)}
+/* Small helper for centering auth cards */
+.auth-wrap{max-width:420px;margin:48px auto;padding:18px}
+/* Toolbar / controls for admin dashboard */
+.toolbar{align-items:center;gap:8px;margin-bottom:8px}
+.small-input{width:100px}
+.status{margin-bottom:8px}
+.card{background:linear-gradient(180deg, rgba(255,255,255,0.01), rgba(0,0,0,0.02));border-radius:12px;padding:22px;box-shadow:var(--glow);border:1px solid rgba(255,0,0,0.06);backdrop-filter:blur(6px)}
 .brand{font-size:28px;color:var(--accent);letter-spacing:1px;margin:0 0 8px}
 .lead{color:var(--muted);margin-bottom:18px}
-.btn{background:var(--accent);color:#111;padding:10px 14px;border-radius:8px;border:none;cursor:pointer;margin-top:8px}
-.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted)}
-.btn.danger{background:var(--accent-dark);color:#fff}
+.btn{background:linear-gradient(90deg,var(--accent),var(--accent-2));color:#0f0f10;padding:10px 14px;border-radius:10px;border:none;cursor:pointer;margin-top:8px;box-shadow:0 6px 18px rgba(183,24,24,0.12)}
+.btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+.btn.danger{background:linear-gradient(90deg,var(--accent-2),#6b0000);color:#fff}
 label{display:block;margin-top:10px;color:var(--muted);font-size:13px}
 input,select,textarea{display:block;padding:8px 10px;margin-top:6px;border-radius:6px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:#fff}
 .accent{color:var(--accent);margin:0 0 8px}
@@ -25,7 +46,18 @@ input,select,textarea{display:block;padding:8px 10px;margin-top:6px;border-radiu
 .table{width:100%;border-collapse:collapse;margin-top:12px}
 .table th, .table td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,0.03);text-align:left}
 
+/* Futuristic table accents */
+.table thead th{background:linear-gradient(90deg, rgba(255,59,59,0.03), transparent);font-weight:600;color:#ffecec}
+.table tbody tr:hover{background:linear-gradient(90deg, rgba(255,59,59,0.025), transparent)}
+.table td{border-right:1px solid rgba(255,0,0,0.02)}
+
+/* Small UI helpers */
+.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:rgba(255,59,59,0.08);color:var(--accent);font-weight:600}
+
 /* small screens */
 @media (max-width:800px){.row{flex-direction:column}}
 
-/* comments: styling is intentionally minimal but futuristic */
+/* subtle animated accent border */
+.card{position:relative}
+.card:before{content:'';position:absolute;inset:-1px;border-radius:13px;padding:1px;background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);pointer-events:none;opacity:0.06}
+

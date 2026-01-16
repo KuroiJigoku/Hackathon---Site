@@ -3,6 +3,8 @@
 import { jwtVerify } from 'jose';
 import { createSecretKey } from 'crypto';
 import { revokeToken } from '../../lib/db.js';
+import buildSecureHeaders from '../../lib/secure-headers.js';
+export const prerender = false;
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const key = JWT_SECRET ? createSecretKey(Buffer.from(JWT_SECRET)) : null;
@@ -26,7 +28,8 @@ export async function post({ request }){
   const isSecure = (process.env.NODE_ENV === 'production');
   const cookieParts = [ `sa_token=deleted`, `HttpOnly`, `Path=/`, `Max-Age=0`, `Expires=Thu, 01 Jan 1970 00:00:00 GMT`, `SameSite=Strict` ];
   if(isSecure) cookieParts.push('Secure');
-  const headers = new Headers({ 'Content-Type': 'application/json' });
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  const headers = new Headers({ ...base, 'Content-Type': 'application/json' });
   headers.append('Set-Cookie', cookieParts.join('; '));
 
   // If we have a valid JWT secret and token, verify and record revocation
@@ -51,3 +54,12 @@ export async function post({ request }){
 
   return new Response(JSON.stringify({ message: 'logged out' }), { status: 200, headers });
 }
+
+export async function get(){
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  return new Response(JSON.stringify({ message: 'Method Not Allowed' }), { status: 405, headers: { ...base, 'Content-Type': 'application/json' } });
+}
+
+// Uppercase aliases for Astro router compatibility
+export const GET = get;
+export const POST = post;

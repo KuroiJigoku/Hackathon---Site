@@ -1,5 +1,10 @@
 ---
 import '../../styles.css';
+import crypto from 'crypto';
+const nonce = crypto.randomBytes(16).toString('base64');
+const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
+const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
+const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' ${styleDirective}; img-src 'self' data:; connect-src 'self';`;
 ---
 <!-- Admin login page. Uses client-side form posting to /api/login. -->
 <html>
@@ -7,12 +12,12 @@ import '../../styles.css';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Login — Smart Attendance</title>
-    <!-- Minimal CSP for demo; prefer setting this via HTTP headers in production -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self';" />
+    <!-- CSP with per-request nonce for scripts/styles. In dev, unsafe-inline is allowed for styles. -->
+    <meta http-equiv="Content-Security-Policy" content={csp} />
     <meta name="referrer" content="no-referrer" />
   </head>
   <body class="bg-dark">
-    <main class="container card">
+    <main class="auth-wrap card">
       <h2 class="accent">Admin Login</h2>
       <!-- Login form: use autocomplete hints and no native autofill capture of sensitive data in JS -->
       <form id="loginForm" autocomplete="on" novalidate>
@@ -26,7 +31,7 @@ import '../../styles.css';
       <p id="msg" class="muted" aria-live="polite" role="status"></p>
     </main>
 
-    <script type="module">
+    <script type="module" nonce={nonce}>
       // Client-side login handler with basic client throttling and sanitization.
       // Note: server enforces strongest security (rate-limiting, hashing, revocation).
       const form = document.getElementById('loginForm');
@@ -65,7 +70,7 @@ import '../../styles.css';
           if(!username || !password){ msg.textContent = 'Invalid credentials'; submitBtn.disabled = false; return; }
 
           try{
-            const res = await fetch('/api/login', {
+            const res = await fetch('/api/login.json', {
               method: 'POST',
               credentials: 'same-origin', // ensure cookies are accepted
               headers: { 'Content-Type': 'application/json' },
@@ -79,9 +84,18 @@ import '../../styles.css';
               // short delay to allow screen readers to announce
               setTimeout(()=> location.href = '/admin/dashboard', 450);
             } else {
-              // Generic error to avoid leaking server details
+              // Server returns structured reason; show user-friendly message
+              const j = await res.json().catch(()=>null);
               recordFailure();
-              msg.textContent = 'Login failed';
+              if(j && j.reason === 'user'){
+                msg.textContent = 'Unknown username';
+              } else if(j && j.reason === 'password'){
+                msg.textContent = 'Incorrect password';
+              } else if(j && j.reason === 'rate_limited'){
+                msg.textContent = 'Too many attempts. Try later.';
+              } else {
+                msg.textContent = j?.message || 'Login failed';
+              }
               // clear password input for safety
               form.password.value = '';
               submitBtn.disabled = false;

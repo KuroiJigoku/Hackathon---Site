@@ -3,6 +3,8 @@
 import { jwtVerify } from 'jose';
 import { createSecretKey } from 'crypto';
 import { getAll, isRevoked } from '../../lib/db.js';
+export const prerender = false;
+import buildSecureHeaders from '../../lib/secure-headers.js';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 const key = JWT_SECRET ? createSecretKey(Buffer.from(JWT_SECRET)) : null;
@@ -78,13 +80,8 @@ export async function get({ request }){
   const offset = Math.max( Number(url.searchParams.get('offset') || 0), 0 );
   const slice = rows.slice(offset, offset + limit);
 
-  // common security headers
-  const baseHeaders = {
-    'X-Content-Type-Options': 'nosniff',
-    'Referrer-Policy': 'no-referrer',
-    'X-Frame-Options': 'DENY',
-    'Cache-Control': 'no-store'
-  };
+  // common security headers (delivered via server header builder)
+  const baseHeaders = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
 
   if(format === 'csv'){
     const csvRows = slice.map(r => `${csvEscape(r.name)},${csvEscape(r.id)},${csvEscape(r.date)},${csvEscape(r.status)}`);
@@ -96,3 +93,13 @@ export async function get({ request }){
   const body = { total: rows.length, limit, offset, count: slice.length, data: slice };
   return new Response(JSON.stringify(body), { status: 200, headers: { ...baseHeaders, 'Content-Type': 'application/json' } });
 }
+
+// Also respond to POST with 405 (attendance is read-only via GET)
+export async function post(){
+  const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+  return new Response(JSON.stringify({ message: 'Method Not Allowed' }), { status: 405, headers: { ...base, 'Content-Type': 'application/json' } });
+}
+
+// Uppercase aliases for Astro router compatibility
+export const GET = get;
+export const POST = post;
