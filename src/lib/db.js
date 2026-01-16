@@ -33,18 +33,27 @@ db.exec(`
 `);
 
 // Migration: ensure 'edited' column exists on older DBs
-try{
+try {
   const cols = db.prepare("PRAGMA table_info('attendance')").all();
-  const hasEdited = cols.some(c => c.name === 'edited');
-  if(!hasEdited){
-    try{ db.exec("ALTER TABLE attendance ADD COLUMN edited INTEGER DEFAULT 0"); } catch(e) { /* ignore if fails */ }
+  const existingCols = cols.map(c => c.name);
+
+  if (!existingCols.includes('edited')) {
+    db.exec("ALTER TABLE attendance ADD COLUMN edited INTEGER DEFAULT 0");
   }
-} catch(e){ /* ignore */ }
+  if (!existingCols.includes('time')) {
+    db.exec("ALTER TABLE attendance ADD COLUMN time TEXT");
+  }
+  if (!existingCols.includes('period')) {
+    db.exec("ALTER TABLE attendance ADD COLUMN period TEXT");
+  }
+} catch (e) {
+  console.error("Database migration failed:", e);
+}
 
 function insertRows(rows){
   const insert = db.prepare('INSERT INTO attendance (id, name, date, time, period, status, edited) VALUES (?, ?, ?, ?, ?, ?, 0)');
   const insertMany = db.transaction((items) => {
-    for(const it of items) insert.run(it.id, it.name, it.date, it.time || null, it.period || null, it.status);
+    for(const it of items) insert.run(it.id, it.name, it.date, it.time, it.period, it.status);
   });
   insertMany(rows);
 }
