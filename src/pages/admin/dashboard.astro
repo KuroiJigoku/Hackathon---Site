@@ -19,18 +19,27 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
       <header class="appbar">
         <div class="title">Smart Attendance — Admin</div>
         <div class="md-actions">
-          <button id="logoutBtn" class="md-btn" title="Logout"><span class="material-icons">logout</span></button>
+            <button id="syncBtn" class="md-btn ripple" title="Sync with remote API">
+            <span class="material-icons">sync</span>
+            <span>Sync Now</span>
+            </button>
+            <button id="logoutBtn" class="md-btn ripple" title="Logout">
+            <span class="material-icons">logout</span>
+            </button>
         </div>
-      </header>
+        </header>
 
-      <section style="padding:12px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between">
+        <section class="dashboard-header" style="padding:16px; display:flex; justify-content:space-between; align-items:center;">
         <div>
-          <h2 class="accent" style="margin:0">Dashboard</h2>
-          <div id="lastImport" class="muted" style="font-size:0.9em;margin-top:4px">Last import: N/A</div>
+            <h2 class="accent" style="margin:0">Attendance Logs</h2>
+            <div id="lastImport" class="muted" style="font-size:0.85em; margin-top:4px;">
+            <span class="material-icons" style="font-size:14px; vertical-align:middle;">history</span>
+            Last Sync: <span id="syncTimestamp">N/A</span>
+            </div>
         </div>
-      </section>
-
-      <h3 style="margin:12px 16px 6px;color:var(--md-on-surface)">Attendance</h3>
+        <div id="syncStatus" class="badge" style="display:none; background:rgba(255,59,59,0.1); font-size:12px;">Syncing...</div>
+        </section>
+    <h3 style="margin:12px 16px 6px;color:var(--md-on-surface)">Attendance</h3>
       <div class="row toolbar" style="padding:0 16px 12px 16px">
         <label>Limit</label>
         <input id="limit" type="number" min="1" max="5000" value="100" class="md-input small-input" />
@@ -61,7 +70,9 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
       const prevBtn = document.getElementById('prevBtn');
       const nextBtn = document.getElementById('nextBtn');
       const pageInfo = document.getElementById('pageInfo');
-      const uploadStatus = document.getElementById('uploadStatus');
+      const syncBtn = document.getElementById('syncBtn');
+      const syncTimestamp = document.getElementById('syncTimestamp');
+      const syncStatus = document.getElementById('syncStatus');
 
       let totalItems = 0;
 
@@ -121,17 +132,38 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
           const status = escapeHtml(r.status||'');
           tr.innerHTML = `<td>${name} ${edited?'<span class="badge" style="background:rgba(255,200,0,0.06);color:#ffd97a;margin-left:8px;font-size:11px">edited</span>':''}</td><td>${sid}</td><td>${date}</td><td>${period}</td><td>${time}</td><td class="status-cell">${statusBadge(status)}</td><td class="actions-cell"></td>`;
           const actionsCell = tr.querySelector('.actions-cell');
+          
           const editBtn = document.createElement('button');
           editBtn.className = 'md-btn ripple';
           editBtn.innerHTML = `<span class="material-icons">edit</span>`;
           editBtn.title = 'Edit status';
-          editBtn.addEventListener('click', ()=>{
-            openEditModal(r, async (payload)=>{
+          
+          editBtn.addEventListener('click', () => {
+            openEditModal(r, async (payload) => {
               const statusCell = tr.querySelector('.status-cell');
               const prev = statusCell.textContent;
               statusCell.textContent = payload.status;
-              const res = await fetch('/api/attendance_edit.json', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: payload.id, date: payload.date, status: payload.status, name: payload.name }) });
-              if(!res.ok){ statusCell.textContent = prev; const j = await res.json().catch(()=>null); showToast(j?.message || 'Failed to update'); }
+
+              // Send the full identity (id, date, period)
+              const res = await fetch('/api/attendance_edit.json', { 
+                method: 'POST', 
+                credentials: 'same-origin', 
+                headers: {'Content-Type': 'application/json'}, 
+                body: JSON.stringify({ 
+                  id: payload.id, 
+                  date: payload.date, 
+                  period: payload.period, // CRITICAL: This prevents duplicates
+                  status: payload.status, 
+                  name: payload.name 
+                  // Note: We don't send 'time' here so the backend can preserve the original
+                }) 
+              });
+
+              if (!res.ok) { 
+                statusCell.textContent = prev; 
+                const j = await res.json().catch(() => null); 
+                showToast(j?.message || 'Failed to update'); 
+              }
             });
           });
           actionsCell.appendChild(editBtn);
@@ -158,9 +190,60 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
           console.error('Failed to load attendance', resp.status);
         }
       }
+
+      // New function to trigger manual remote fetch
+      async function triggerManualSync() {
+        syncBtn.disabled = true;
+        syncStatus.style.display = 'inline-block';
+        syncStatus.textContent = 'Syncing...';
+        
+        try {
+          // Calling your existing remote import API
+          const res = await fetch('/api/import_remote.json', { method: 'GET', credentials: 'same-origin' });
+          const data = await res.json();
+          
+          if (res.ok) {
+            showToast(`Sync successful: Imported ${data.imported} records`);
+            await fetchAttendance(); // Refresh table immediately
+            updateLastSyncLabel();
+          } else {
+            showToast('Sync failed: ' + (data.message || 'Unknown error'));
+          }
+        } catch (e) {
+          showToast('Network error during sync');
+        } finally {
+          syncBtn.disabled = false;
+          syncStatus.style.display = 'none';
+        }
+      }
+
+      // Fetch the last import state from the server state helper
+      async function updateLastSyncLabel() {
+        try {
+          const res = await fetch('/api/import_status.json');
+          if (res.ok) {
+            const status = await res.json();
+            if (status.at) {
+              const date = new Date(status.at);
+              syncTimestamp.textContent = date.toLocaleTimeString() + ' ' + date.toLocaleDateString();
+            }
+          }
+        } catch (e) { console.warn('Could not fetch sync status'); }
+      }
+
+      // Attach event listener
+      syncBtn?.addEventListener('click', triggerManualSync);
+
+      // Initial calls
+      fetchAttendance();
+      updateLastSyncLabel();
       
-      // Refresh attendance every 20s
-      setInterval(fetchAttendance, 20000);
+      // Refresh label and data every 20s
+      setInterval(() => {
+        fetchAttendance();
+        updateLastSyncLabel();
+      }, 20000);
+    
 
       prevBtn?.addEventListener('click', ()=>{
         const limit = Number(limitInput.value) || 100;

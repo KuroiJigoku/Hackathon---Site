@@ -84,8 +84,33 @@ input,select,textarea{display:block;padding:8px 10px;margin-top:6px;border-radiu
 .appbar .title{font-weight:600;font-size:18px;color:var(--md-on-surface)}
 .md-actions{display:flex;gap:8px}
 .md-btn{background:transparent;border:none;color:var(--md-on-surface);padding:8px 10px;border-radius:6px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
-.md-btn.primary{background:linear-gradient(90deg,var(--md-primary),var(--md-primary-variant));color:#0b0b0b;padding:8px 12px;border-radius:8px}
-.md-input{background:transparent;border:1px solid rgba(255,255,255,0.04);padding:10px;border-radius:6px;color:var(--md-on-surface)}
+.md-input {
+  background: transparent;
+  /* Change: Solid white border with higher opacity */
+  border: 1px solid #ffffff; 
+  padding: 10px;
+  border-radius: 6px;
+  color: var(--md-on-surface);
+  /* Optional: Add a subtle transition for focus */
+  transition: border-color 0.2s ease;
+}
+
+.md-input:focus {
+  border-color: var(--md-primary);
+  outline: none;
+}
+
+.md-btn.primary {
+  background: linear-gradient(90deg, var(--md-primary), var(--md-primary-variant));
+  color: #0b0b0b;
+  padding: 8px 12px;
+  border-radius: 8px;
+  width: fit-content;
+  align-self: center; 
+  min-width: 140px;
+  justify-content: center;
+}
+
 .material-icons{font-family:'Material Icons';font-weight:normal;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased}
 .material-icons{font-feature-settings:'liga';}
 

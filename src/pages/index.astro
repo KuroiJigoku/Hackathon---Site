@@ -6,28 +6,35 @@ const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
 const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
 const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' https://fonts.googleapis.com ${styleDirective}; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';`;
 ---
-<!-- Homepage: brief demo description and link to admin -->
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart Attendance - Demo</title>
-    <!-- Content-Security-Policy: per-request nonce for scripts/styles; allow unsafe-inline styles in dev -->
     <meta http-equiv="Content-Security-Policy" content={csp} />
-    <!-- Referrer policy to avoid leaking full URLs -->
     <meta name="referrer" content="no-referrer" />
-    <!-- Permissions policy: deny camera/microphone by default; request explicitly when needed in UI -->
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=()" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet" />
   </head>
   <body class="bg-dark centered-viewport">
-    <main class="auth-wrap md-card fade-in" role="main" aria-labelledby="home-title">
-      <div style="display:flex;align-items:center;gap:12px">
-        <h1 id="home-title" class="brand" style="margin:0">Smart Attendance</h1>
+    <main class="auth-wrap md-card fade-in" style="text-align: center; display: flex; flex-direction: column; gap: 20px; align-items: center;">
+      
+      <div style="background: rgba(255, 59, 59, 0.1); width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid rgba(255, 59, 59, 0.2);">
+        <span class="material-icons" style="font-size: 48px; color: var(--md-primary);">fact_check</span>
       </div>
-      <p class="lead">Smart Attendance Dashboard </p>
-      <div style="display:flex;gap:10px;margin-top:12px">
-        <a class="md-btn primary" href="/admin/login" aria-label="Open admin login"><span class="material-icons">admin_panel_settings</span>&nbsp;Admin</a>
+
+      <div>
+        <h1 id="home-title" class="brand" style="margin:0; font-size: 2.2rem;">Smart Attendance</h1>
+        <p class="lead" style="margin-top: 8px;">Next-generation attendance management dashboard.</p>
       </div>
+
+      <div style="display: flex; justify-content: center; width: 100%;">
+        <a class="md-btn primary ripple" href="/admin/login" aria-label="Open admin login" style="text-decoration: none; min-width: 160px; justify-content: center;">
+          <span class="material-icons">admin_panel_settings</span>
+          <span>Admin Portal</span>
+        </a>
+      </div>
+
     </main>
   </body>
 </html>
