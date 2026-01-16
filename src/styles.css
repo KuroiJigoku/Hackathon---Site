@@ -111,8 +111,7 @@ input,select,textarea{display:block;padding:8px 10px;margin-top:6px;border-radiu
   justify-content: center;
 }
 
-.material-icons{font-family:'Material Icons';font-weight:normal;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';-webkit-font-smoothing:antialiased}
-.material-icons{font-feature-settings:'liga';}
+.material-icons{font-family:'Material Icons';font-weight:normal;font-style:normal;font-size:20px;line-height:1;letter-spacing:normal;text-transform:none;display:inline-block;white-space:nowrap;word-wrap:normal;direction:ltr;-webkit-font-feature-settings:'liga';font-feature-settings:'liga';-webkit-font-smoothing:antialiased}
 
 /* Ripple effect for buttons */
 .ripple{position:relative;overflow:hidden}
