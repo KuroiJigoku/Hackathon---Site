@@ -1,0 +1,111 @@
+---
+import '../../styles.css';
+---
+<!-- Admin dashboard: upload CSV and view attendance. Protected client-side by checking /api/attendance. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Dashboard — Smart Attendance</title>
+  </head>
+  <body class="bg-dark">
+    <main class="container card">
+      <h2 class="accent">Admin Dashboard</h2>
+      <div class="row">
+        <div>
+          <label>Upload attendance CSV for a date</label>
+          <input id="date" type="date" />
+          <input id="csvfile" type="file" accept=".csv" />
+          <button id="uploadBtn" class="btn">Upload CSV</button>
+        </div>
+        <div>
+          <button id="downloadBtn" class="btn ghost">Download CSV</button>
+          <button id="logoutBtn" class="btn danger">Logout</button>
+        </div>
+      </div>
+
+      <h3>Attendance</h3>
+      <table id="table" class="table">
+        <thead><tr><th>Name</th><th>ID</th><th>Date</th><th>Status</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </main>
+
+    <script type="module">
+      // Dashboard client: parse CSV using PapaParse loaded via CDN-free approach (small CSVs -> manual parsing)
+      const uploadBtn = document.getElementById('uploadBtn');
+      const csvfile = document.getElementById('csvfile');
+      const dateInput = document.getElementById('date');
+      const tableBody = document.querySelector('#table tbody');
+      const downloadBtn = document.getElementById('downloadBtn');
+      const logoutBtn = document.getElementById('logoutBtn');
+
+      function render(rows){
+        tableBody.innerHTML = '';
+        for(const r of rows){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${r.name||''}</td><td>${r.id||''}</td><td>${r.date||''}</td><td>${r.status||''}</td>`;
+          tableBody.appendChild(tr);
+        }
+      }
+
+      async function fetchAttendance(){
+        const resp = await fetch('/api/attendance');
+        if(resp.ok){
+          const json = await resp.json();
+          render(json || []);
+        } else if (resp.status === 401){
+          location.href = '/admin/login';
+        }
+      }
+
+      // Simple CSV parser for demo: assumes header with name,id
+      function parseCSV(text){
+        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+        if(lines.length<1) return [];
+        const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+        const out = [];
+        for(let i=1;i<lines.length;i++){
+          const cols = lines[i].split(',');
+          const obj = {};
+          headers.forEach((h,idx)=> obj[h]=cols[idx]?.trim());
+          out.push(obj);
+        }
+        return out;
+      }
+
+      uploadBtn?.addEventListener('click', async ()=>{
+        if(!csvfile.files?.length){ alert('Select CSV file'); return; }
+        const f = csvfile.files[0];
+        const text = await f.text();
+        const rows = parseCSV(text);
+        const date = dateInput.value || new Date().toISOString().slice(0,10);
+        // Prepare payload: each row -> { name,id,date,status }
+        const payload = rows.map(r=>({ name: r.name||r.fullname||'', id: r.id||r.studentid||'', date, status: 'present' }));
+        const res = await fetch('/api/uploadCSV', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rows: payload }) });
+        if(res.ok){ fetchAttendance(); alert('Uploaded'); } else { alert('Upload failed'); }
+      });
+
+      downloadBtn?.addEventListener('click', async ()=>{
+        const res = await fetch('/api/attendance?format=csv');
+        if(res.ok){
+          const txt = await res.text();
+          const blob = new Blob([txt], { type: 'text/csv' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'attendance.csv';
+          a.click();
+          URL.revokeObjectURL(url);
+        } else alert('Failed to download');
+      });
+
+      logoutBtn?.addEventListener('click', async ()=>{
+        await fetch('/api/logout', { method: 'POST' });
+        location.href = '/admin/login';
+      });
+
+      // Initial load
+      fetchAttendance();
+    </script>
+  </body>
+</html>

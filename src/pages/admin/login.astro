@@ -1,0 +1,49 @@
+---
+import '../../styles.css';
+---
+<!-- Admin login page. Uses client-side form posting to /api/login. -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin Login — Smart Attendance</title>
+  </head>
+  <body class="bg-dark">
+    <main class="container card">
+      <h2 class="accent">Admin Login</h2>
+      <form id="loginForm">
+        <label>Username</label>
+        <input name="username" required />
+        <label>Password</label>
+        <input name="password" type="password" required />
+        <button class="btn" type="submit">Sign in</button>
+      </form>
+      <p id="msg" class="muted"></p>
+    </main>
+
+    <script>
+      // Client-side login handler: posts to /api/login and sets cookie via server response
+      const form = document.getElementById('loginForm');
+      const msg = document.getElementById('msg');
+      if (form instanceof HTMLFormElement && msg) {
+        form.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          msg.textContent = 'Signing in...';
+          const fd = new FormData(form);
+        const res = await fetch('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }),
+          headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+          msg.textContent = 'Login successful — redirecting.';
+          location.href = '/admin/dashboard';
+          } else {
+            const j = await res.json();
+            msg.textContent = j?.message || 'Login failed';
+          }
+        });
+      }
+    </script>
+  </body>
+</html>
