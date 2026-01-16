@@ -5,6 +5,9 @@ package-lock.json
 /node_modules
 /dist
 
+/.astro
+/.VSCodeCounter
+/.VSCode
 .DS_Store
 .vscode
 .idea
