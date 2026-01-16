@@ -7,12 +7,21 @@ import '../styles.css';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Smart Attendance - Demo</title>
+    <!-- Content-Security-Policy: limits sources for scripts/styles/media. For production set via HTTP header. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none';" />
+    <!-- Referrer policy to avoid leaking full URLs -->
+    <meta name="referrer" content="no-referrer" />
+    <!-- Permissions policy: deny camera/microphone by default; request explicitly when needed in UI -->
+    <meta http-equiv="Permissions-Policy" content="camera=(), microphone=()" />
   </head>
   <body class="bg-dark">
-    <main class="container">
+    <main class="container" role="main">
+      <!-- Brand: uses accent color from theme -->
       <h1 class="brand">Smart Attendance — Demo</h1>
+      <!-- Short description: keep it non-sensitive and concise -->
       <p class="lead">Dual-verification attendance demo (fingerprint + vision). Admin portal for CSV uploads and viewing attendance.</p>
-      <a class="btn" href="/admin/login">Go to Admin</a>
+      <!-- Use rel and accessible label for links; avoid target="_blank" unless necessary -->
+      <a class="btn" href="/admin/login" aria-label="Open admin login">Go to Admin</a>
     </main>
   </body>
 </html>

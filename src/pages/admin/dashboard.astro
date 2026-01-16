@@ -13,7 +13,7 @@ import '../../styles.css';
       <h2 class="accent">Admin Dashboard</h2>
       <div class="row">
         <div>
-          <label>Upload attendance CSV for a date</label>
+          <label for="date">Upload attendance CSV for a date</label>
           <input id="date" type="date" />
           <input id="csvfile" type="file" accept=".csv" />
           <button id="uploadBtn" class="btn">Upload CSV</button>
@@ -25,6 +25,18 @@ import '../../styles.css';
       </div>
 
       <h3>Attendance</h3>
+      <div class="row" style="align-items:center;gap:8px;margin-bottom:8px;">
+        <label>Limit</label>
+        <input id="limit" type="number" min="1" max="5000" value="100" style="width:100px" />
+        <label>Offset</label>
+        <input id="offset" type="number" min="0" value="0" style="width:100px" />
+        <button id="prevBtn" class="btn ghost">Prev</button>
+        <button id="nextBtn" class="btn ghost">Next</button>
+        <div id="pageInfo" class="muted"></div>
+      </div>
+
+      <div id="uploadStatus" class="muted" style="margin-bottom:8px"></div>
+
       <table id="table" class="table">
         <thead><tr><th>Name</th><th>ID</th><th>Date</th><th>Status</th></tr></thead>
         <tbody></tbody>
@@ -32,30 +44,48 @@ import '../../styles.css';
     </main>
 
     <script type="module">
-      // Dashboard client: parse CSV using PapaParse loaded via CDN-free approach (small CSVs -> manual parsing)
+      // Dashboard client with pagination and upload result reporting
       const uploadBtn = document.getElementById('uploadBtn');
       const csvfile = document.getElementById('csvfile');
       const dateInput = document.getElementById('date');
       const tableBody = document.querySelector('#table tbody');
       const downloadBtn = document.getElementById('downloadBtn');
       const logoutBtn = document.getElementById('logoutBtn');
+      const limitInput = document.getElementById('limit');
+      const offsetInput = document.getElementById('offset');
+      const prevBtn = document.getElementById('prevBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const pageInfo = document.getElementById('pageInfo');
+      const uploadStatus = document.getElementById('uploadStatus');
+
+      let totalItems = 0;
 
       function render(rows){
         tableBody.innerHTML = '';
         for(const r of rows){
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${r.name||''}</td><td>${r.id||''}</td><td>${r.date||''}</td><td>${r.status||''}</td>`;
+          tr.innerHTML = `<td>${escapeHtml(r.name||'')}</td><td>${escapeHtml(r.id||'')}</td><td>${escapeHtml(r.date||'')}</td><td>${escapeHtml(r.status||'')}</td>`;
           tableBody.appendChild(tr);
         }
       }
 
+      function escapeHtml(s){
+        return String(s).replace(/[&<>\"]/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+      }
+
       async function fetchAttendance(){
-        const resp = await fetch('/api/attendance');
+        const limit = Number(limitInput.value) || 100;
+        const offset = Number(offsetInput.value) || 0;
+        const resp = await fetch(`/api/attendance?limit=${limit}&offset=${offset}`, { credentials: 'same-origin' });
         if(resp.ok){
           const json = await resp.json();
-          render(json || []);
+          totalItems = json.total || 0;
+          render(json.data || []);
+          pageInfo.textContent = `Showing ${json.count} of ${totalItems} (offset ${json.offset}, limit ${json.limit})`;
         } else if (resp.status === 401){
           location.href = '/admin/login';
+        } else {
+          console.error('Failed to load attendance', resp.status);
         }
       }
 
@@ -75,19 +105,35 @@ import '../../styles.css';
       }
 
       uploadBtn?.addEventListener('click', async ()=>{
-        if(!csvfile.files?.length){ alert('Select CSV file'); return; }
+        uploadStatus.textContent = '';
+        if(!csvfile.files?.length){ uploadStatus.textContent = 'Select CSV file'; return; }
         const f = csvfile.files[0];
         const text = await f.text();
         const rows = parseCSV(text);
         const date = dateInput.value || new Date().toISOString().slice(0,10);
-        // Prepare payload: each row -> { name,id,date,status }
         const payload = rows.map(r=>({ name: r.name||r.fullname||'', id: r.id||r.studentid||'', date, status: 'present' }));
-        const res = await fetch('/api/uploadCSV', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rows: payload }) });
-        if(res.ok){ fetchAttendance(); alert('Uploaded'); } else { alert('Upload failed'); }
+        const res = await fetch('/api/uploadCSV', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rows: payload }) });
+        try{
+          const j = await res.json();
+          if(res.ok){
+            uploadStatus.textContent = `Uploaded — appended ${j.appended || 0} rows.`;
+            // reload first page
+            offsetInput.value = 0;
+            fetchAttendance();
+          } else if(res.status === 401){
+            location.href = '/admin/login';
+          } else {
+            uploadStatus.textContent = j?.message || 'Upload failed';
+          }
+        } catch(e){
+          uploadStatus.textContent = res.ok ? 'Upload done' : 'Upload failed';
+        }
       });
 
       downloadBtn?.addEventListener('click', async ()=>{
-        const res = await fetch('/api/attendance?format=csv');
+        const limit = Number(limitInput.value) || 100;
+        const offset = Number(offsetInput.value) || 0;
+        const res = await fetch(`/api/attendance?format=csv&limit=${limit}&offset=${offset}`, { credentials: 'same-origin' });
         if(res.ok){
           const txt = await res.text();
           const blob = new Blob([txt], { type: 'text/csv' });
@@ -96,11 +142,30 @@ import '../../styles.css';
           a.href = url; a.download = 'attendance.csv';
           a.click();
           URL.revokeObjectURL(url);
+        } else if(res.status === 401){
+          location.href = '/admin/login';
         } else alert('Failed to download');
       });
 
+      prevBtn?.addEventListener('click', ()=>{
+        const limit = Number(limitInput.value) || 100;
+        let offset = Number(offsetInput.value) || 0;
+        offset = Math.max(0, offset - limit);
+        offsetInput.value = offset;
+        fetchAttendance();
+      });
+
+      nextBtn?.addEventListener('click', ()=>{
+        const limit = Number(limitInput.value) || 100;
+        let offset = Number(offsetInput.value) || 0;
+        offset = offset + limit;
+        if(offset >= totalItems) return;
+        offsetInput.value = offset;
+        fetchAttendance();
+      });
+
       logoutBtn?.addEventListener('click', async ()=>{
-        await fetch('/api/logout', { method: 'POST' });
+        await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
         location.href = '/admin/login';
       });
 

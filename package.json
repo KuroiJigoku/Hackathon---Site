@@ -10,6 +10,7 @@
   "dependencies": {
     "astro": "^5.16.10",
     "argon2": "^0.44.0",
-    "jose": "^6.1.3"
+    "jose": "^6.1.3",
+    "better-sqlite3": "^12.6.0"
   }
 }

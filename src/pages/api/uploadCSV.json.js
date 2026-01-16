@@ -1,35 +1,80 @@
 // API route: POST /api/uploadCSV
-// Accepts { rows: [{ name,id,date,status }] } and appends to data/attendance.json
-import fs from 'fs';
-import path from 'path';
+// Accepts JSON body { rows: [{ name,id,date,status }] } and appends validated rows to data/attendance.json
 import { jwtVerify } from 'jose';
 import { createSecretKey } from 'crypto';
+import { insertRows, isRevoked } from '../../lib/db.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
-const DATA_FILE = path.resolve('./data/attendance.json');
-const key = createSecretKey(Buffer.from(JWT_SECRET));
+// JWT secret
+const JWT_SECRET = process.env.JWT_SECRET;
+const key = JWT_SECRET ? createSecretKey(Buffer.from(JWT_SECRET)) : null;
+
+function parseCookies(cookieHeader){
+  const out = {};
+  if(!cookieHeader) return out;
+  cookieHeader.split(';').forEach(part => {
+    const idx = part.indexOf('=');
+    if(idx > -1){
+      const name = part.slice(0, idx).trim();
+      const val = part.slice(idx + 1).trim();
+      try { out[name] = decodeURIComponent(val); } catch(e){ out[name] = val; }
+    }
+  });
+  return out;
+}
 
 async function requireAuth(request){
-  const cookie = request.headers.get('cookie') || '';
-  const match = cookie.split(';').map(s=>s.trim()).find(s=>s.startsWith('sa_token='));
-  if(!match) return false;
-  const token = match.split('=')[1];
-  try { await jwtVerify(token, key); return true; } catch(e){ return false; }
+  if(!key) return false; // JWT secret not configured
+  const cookieHeader = request.headers.get('cookie') || '';
+  const cookies = parseCookies(cookieHeader);
+  const token = cookies['sa_token'];
+  if(!token) return false;
+  try { await jwtVerify(token, key); } catch(e){ return false; }
+  // Ensure token is not revoked
+  try { if(await isRevoked(token)) return false; } catch(e) { return false; }
+  return true;
+}
+
+function validateRow(raw){
+  if(!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || raw.fullname || '').trim();
+  if(!name || name.length > 200) return null;
+  const id = String(raw.id ?? raw.studentid ?? '').trim();
+  if(!id || id.length > 100) return null;
+  const date = String(raw.date || new Date().toISOString().slice(0,10)).trim();
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  let status = String(raw.status || 'present').trim().toLowerCase();
+  if(!['present','absent','late'].includes(status)) status = 'present';
+  return { name, id, date, status };
 }
 
 export async function post({ request }){
-  if(!await requireAuth(request)) return new Response(JSON.stringify({ message: 'unauth' }), { status: 401 });
-  const body = await request.json();
-  const rows = body?.rows || [];
-  // ensure data directory exists
-  const dir = path.dirname(DATA_FILE);
-  if(!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  let existing = [];
-  if(fs.existsSync(DATA_FILE)){
-    try { existing = JSON.parse(fs.readFileSync(DATA_FILE,'utf8')||'[]'); } catch(e){ existing = []; }
+  // If JWT secret is not configured, reject and instruct to configure env
+  if(!JWT_SECRET){
+    return new Response(JSON.stringify({ message: 'Server misconfiguration: JWT_SECRET not set' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
-  // Append rows
-  const out = existing.concat(rows);
-  fs.writeFileSync(DATA_FILE, JSON.stringify(out, null, 2), 'utf8');
-  return new Response(JSON.stringify({ ok: true }), { status: 200 });
+
+  if(!await requireAuth(request)) return new Response(JSON.stringify({ message: 'unauth' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+
+  let body;
+  try { body = await request.json(); } catch(e){
+    return new Response(JSON.stringify({ message: 'Invalid JSON' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  const incoming = Array.isArray(body?.rows) ? body.rows : [];
+  const validated = [];
+  for(const r of incoming){
+    const v = validateRow(r);
+    if(v) validated.push(v);
+  }
+
+  if(validated.length === 0) return new Response(JSON.stringify({ message: 'No valid rows to append' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+
+  try{
+    insertRows(validated);
+  } catch(e){
+    return new Response(JSON.stringify({ message: 'Failed to persist attendance' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  return new Response(JSON.stringify({ ok: true, appended: validated.length }), { status: 200, headers: { 'Content-Type': 'application/json' } });
 }
+

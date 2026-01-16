@@ -7,40 +7,89 @@ import '../../styles.css';
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Login — Smart Attendance</title>
+    <!-- Minimal CSP for demo; prefer setting this via HTTP headers in production -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self';" />
+    <meta name="referrer" content="no-referrer" />
   </head>
   <body class="bg-dark">
     <main class="container card">
       <h2 class="accent">Admin Login</h2>
-      <form id="loginForm">
-        <label>Username</label>
-        <input name="username" required />
-        <label>Password</label>
-        <input name="password" type="password" required />
-        <button class="btn" type="submit">Sign in</button>
+      <!-- Login form: use autocomplete hints and no native autofill capture of sensitive data in JS -->
+      <form id="loginForm" autocomplete="on" novalidate>
+        <label for="username">Username</label>
+        <input id="username" name="username" autocomplete="username" required maxlength="100" />
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" />
+        <button id="submitBtn" class="btn" type="submit">Sign in</button>
       </form>
-      <p id="msg" class="muted"></p>
+      <!-- ARIA live region for status messages (screen-reader friendly) -->
+      <p id="msg" class="muted" aria-live="polite" role="status"></p>
     </main>
 
-    <script>
-      // Client-side login handler: posts to /api/login and sets cookie via server response
+    <script type="module">
+      // Client-side login handler with basic client throttling and sanitization.
+      // Note: server enforces strongest security (rate-limiting, hashing, revocation).
       const form = document.getElementById('loginForm');
       const msg = document.getElementById('msg');
-      if (form instanceof HTMLFormElement && msg) {
+      const submitBtn = document.getElementById('submitBtn');
+
+      // Basic session-scoped attempt limiter to reduce spam from a single browser
+      const ATTEMPT_KEY = 'sa_login_attempts';
+      const MAX_ATTEMPTS = 5;
+      const LOCK_MS = 15 * 60 * 1000; // 15 minutes
+
+      function attemptsGet(){
+        try { return JSON.parse(sessionStorage.getItem(ATTEMPT_KEY) || 'null') || {count:0, lockedUntil:0}; } catch(e){ return {count:0, lockedUntil:0}; }
+      }
+      function attemptsSave(v){ sessionStorage.setItem(ATTEMPT_KEY, JSON.stringify(v)); }
+
+      function isLocked(){ const v = attemptsGet(); return v.lockedUntil && Date.now() < v.lockedUntil; }
+      function recordFailure(){ const v = attemptsGet(); v.count = (v.count||0)+1; if(v.count>=MAX_ATTEMPTS) v.lockedUntil = Date.now()+LOCK_MS; attemptsSave(v); }
+      function resetAttempts(){ sessionStorage.removeItem(ATTEMPT_KEY); }
+
+      function sanitizeInput(s, maxLen=200){ return String(s||'').trim().slice(0, maxLen); }
+
+      if(form instanceof HTMLFormElement && msg && submitBtn){
         form.addEventListener('submit', async (e) => {
           e.preventDefault();
+          if(isLocked()){ msg.textContent = 'Too many attempts. Try again later.'; return; }
+
+          // Disable UI while submitting
+          submitBtn.disabled = true;
           msg.textContent = 'Signing in...';
-          const fd = new FormData(form);
-        const res = await fetch('/api/login', {
-          method: 'POST',
-          body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') }),
-          headers: { 'Content-Type': 'application/json' }
-        });
-        if (res.ok) {
-          msg.textContent = 'Login successful — redirecting.';
-          location.href = '/admin/dashboard';
-          } else {
-            const j = await res.json();
-            msg.textContent = j?.message || 'Login failed';
+
+          const username = sanitizeInput(form.username.value, 100);
+          const password = sanitizeInput(form.password.value, 128);
+
+          // Minimal client-side validation
+          if(!username || !password){ msg.textContent = 'Invalid credentials'; submitBtn.disabled = false; return; }
+
+          try{
+            const res = await fetch('/api/login', {
+              method: 'POST',
+              credentials: 'same-origin', // ensure cookies are accepted
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ username, password })
+            });
+
+            if(res.ok){
+              // Successful login — clear attempts and redirect
+              resetAttempts();
+              msg.textContent = 'Login successful — redirecting.';
+              // short delay to allow screen readers to announce
+              setTimeout(()=> location.href = '/admin/dashboard', 450);
+            } else {
+              // Generic error to avoid leaking server details
+              recordFailure();
+              msg.textContent = 'Login failed';
+              // clear password input for safety
+              form.password.value = '';
+              submitBtn.disabled = false;
+            }
+          } catch(err){
+            console.error('Login request failed', err);
+            msg.textContent = 'Network error';
+            submitBtn.disabled = false;
           }
         });
       }
