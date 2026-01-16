@@ -4,7 +4,7 @@ import crypto from 'crypto';
 const nonce = crypto.randomBytes(16).toString('base64');
 const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
 const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
-const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' ${styleDirective}; img-src 'self' data:; connect-src 'self';`;
+const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' https://fonts.googleapis.com ${styleDirective}; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';`;
 ---
 <!-- Admin login page. Uses client-side form posting to /api/login. -->
 <html>
@@ -14,18 +14,19 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
     <title>Admin Login — Smart Attendance</title>
     <!-- CSP with per-request nonce for scripts/styles. In dev, unsafe-inline is allowed for styles. -->
     <meta http-equiv="Content-Security-Policy" content={csp} />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet" />
     <meta name="referrer" content="no-referrer" />
   </head>
-  <body class="bg-dark">
-    <main class="auth-wrap card">
-      <h2 class="accent">Admin Login</h2>
-      <!-- Login form: use autocomplete hints and no native autofill capture of sensitive data in JS -->
-      <form id="loginForm" autocomplete="on" novalidate>
+  <body class="bg-dark centered-viewport">
+    <main class="auth-wrap md-card fade-in" style="display:flex;flex-direction:column;gap:12px;align-items:stretch">
+      <div style="display:flex;align-items:center;gap:12px"><span class="material-icons">security</span><h2 class="accent" style="margin:0">Admin Login</h2></div>
+      <!-- Login form: use client-side form posting to /api/login.json -->
+      <form id="loginForm" autocomplete="on" novalidate style="display:flex;flex-direction:column;gap:8px">
         <label for="username">Username</label>
-        <input id="username" name="username" autocomplete="username" required maxlength="100" />
+        <input id="username" name="username" autocomplete="username" required maxlength="100" class="md-input" />
         <label for="password">Password</label>
-        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" />
-        <button id="submitBtn" class="btn" type="submit">Sign in</button>
+        <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128" class="md-input" />
+        <button id="submitBtn" class="md-btn primary" type="submit"><span class="material-icons">login</span> Sign in</button>
       </form>
       <!-- ARIA live region for status messages (screen-reader friendly) -->
       <p id="msg" class="muted" aria-live="polite" role="status"></p>

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 const nonce = crypto.randomBytes(16).toString('base64');
 const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
 const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
-const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' ${styleDirective}; img-src 'self' data:; connect-src 'self';`;
+const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' https://fonts.googleapis.com ${styleDirective}; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';`;
 ---
 <!-- Homepage: brief demo description and link to admin -->
 <html lang="en">
@@ -19,14 +19,15 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
     <!-- Permissions policy: deny camera/microphone by default; request explicitly when needed in UI -->
     <meta http-equiv="Permissions-Policy" content="camera=(), microphone=()" />
   </head>
-  <body class="bg-dark">
-    <main class="container" role="main">
-      <!-- Brand: uses accent color from theme -->
-      <h1 class="brand">Smart Attendance — Demo</h1>
-      <!-- Short description: keep it non-sensitive and concise -->
-      <p class="lead">Dual-verification attendance demo (fingerprint + vision). Admin portal for CSV uploads and viewing attendance.</p>
-      <!-- Use rel and accessible label for links; avoid target="_blank" unless necessary -->
-      <a class="btn" href="/admin/login" aria-label="Open admin login">Go to Admin</a>
+  <body class="bg-dark centered-viewport">
+    <main class="auth-wrap md-card fade-in" role="main" aria-labelledby="home-title">
+      <div style="display:flex;align-items:center;gap:12px">
+        <h1 id="home-title" class="brand" style="margin:0">Smart Attendance</h1>
+      </div>
+      <p class="lead">Smart Attendance Dashboard </p>
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <a class="md-btn primary" href="/admin/login" aria-label="Open admin login"><span class="material-icons">admin_panel_settings</span>&nbsp;Admin</a>
+      </div>
     </main>
   </body>
 </html>

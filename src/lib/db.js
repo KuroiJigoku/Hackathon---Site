@@ -16,7 +16,10 @@ db.exec(`
     id TEXT NOT NULL,
     name TEXT NOT NULL,
     date TEXT NOT NULL,
+    time TEXT,
+    period TEXT,
     status TEXT NOT NULL,
+    edited INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   );
 `);
@@ -29,16 +32,42 @@ db.exec(`
   );
 `);
 
+// Migration: ensure 'edited' column exists on older DBs
+try{
+  const cols = db.prepare("PRAGMA table_info('attendance')").all();
+  const hasEdited = cols.some(c => c.name === 'edited');
+  if(!hasEdited){
+    try{ db.exec("ALTER TABLE attendance ADD COLUMN edited INTEGER DEFAULT 0"); } catch(e) { /* ignore if fails */ }
+  }
+} catch(e){ /* ignore */ }
+
 function insertRows(rows){
-  const insert = db.prepare('INSERT INTO attendance (id, name, date, status) VALUES (?, ?, ?, ?)');
+  const insert = db.prepare('INSERT INTO attendance (id, name, date, time, period, status, edited) VALUES (?, ?, ?, ?, ?, ?, 0)');
   const insertMany = db.transaction((items) => {
-    for(const it of items) insert.run(it.id, it.name, it.date, it.status);
+    for(const it of items) insert.run(it.id, it.name, it.date, it.time || null, it.period || null, it.status);
   });
   insertMany(rows);
 }
 
+function updateStatus({ id, date, period, time, status, name, markEdited = false }){
+  // Upsert: if entry exists for id+date+period, update only if not manually edited; else insert
+  const existing = db.prepare('SELECT rowid, edited FROM attendance WHERE id = ? AND date = ? AND (period = ? OR period IS NULL)').get(id, date, period);
+  if(existing){
+    if(existing.edited && !markEdited){
+      // preserve admin-edited row — do not overwrite
+      return { skipped: true };
+    }
+    // If this update is coming from an admin edit, set edited flag
+    const editedFlag = markEdited ? 1 : (existing.edited || 0);
+    db.prepare('UPDATE attendance SET status = ?, time = ?, period = ?, name = COALESCE(?, name), edited = ? WHERE rowid = ?').run(status, time || null, period || null, name || null, editedFlag, existing.rowid);
+    return { updated: true };
+  }
+  db.prepare('INSERT INTO attendance (id, name, date, time, period, status, edited) VALUES (?, ?, ?, ?, ?, ?, 0)').run(id, name || id, date, time || null, period || null, status);
+  return { inserted: true };
+}
+
 function getAll(){
-  return db.prepare('SELECT name,id,date,status FROM attendance ORDER BY date DESC, name ASC').all();
+  return db.prepare('SELECT name,id,date,time,period,status,edited FROM attendance ORDER BY date DESC, name ASC').all();
 }
 
 function revokeToken(token, expiresAt){
@@ -57,4 +86,4 @@ function isRevoked(token){
   return true;
 }
 
-export { insertRows, getAll, revokeToken, isRevoked, DB_PATH };
+export { insertRows, updateStatus, getAll, revokeToken, isRevoked, DB_PATH };

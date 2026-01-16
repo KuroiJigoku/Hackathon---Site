@@ -55,7 +55,15 @@ export async function post({ request }){
   return new Response(JSON.stringify({ message: 'logged out' }), { status: 200, headers });
 }
 
-export async function get(){
+export async function get({ request }){
+  // Allow GET logout in non-production (convenience for curl/dev). Production remains POST-only.
+  if(process.env.NODE_ENV !== 'production'){
+    // reuse POST logic
+    return await post({ request }).catch(()=>{
+      const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
+      return new Response(JSON.stringify({ message: 'Logout failed' }), { status: 500, headers: { ...base, 'Content-Type': 'application/json' } });
+    });
+  }
   const base = buildSecureHeaders({ allowUnsafeInlineStyles: process.env.NODE_ENV !== 'production' });
   return new Response(JSON.stringify({ message: 'Method Not Allowed' }), { status: 405, headers: { ...base, 'Content-Type': 'application/json' } });
 }

@@ -4,7 +4,7 @@ import crypto from 'crypto';
 const nonce = crypto.randomBytes(16).toString('base64');
 const allowUnsafeStyles = process.env.NODE_ENV !== 'production';
 const styleDirective = allowUnsafeStyles ? "'unsafe-inline'" : `'nonce-${nonce}'`;
-const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' ${styleDirective}; img-src 'self' data:; connect-src 'self';`;
+const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src 'self' https://fonts.googleapis.com ${styleDirective}; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self';`;
 ---
 <html>
   <head>
@@ -12,49 +12,49 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Admin Dashboard — Smart Attendance</title>
     <meta http-equiv="Content-Security-Policy" content={csp} />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Icons" rel="stylesheet" />
   </head>
-  <body class="bg-dark">
-    <main class="container card">
-      <h2 class="accent">Admin Dashboard</h2>
-      <div class="row">
-        <div>
-          <label for="date">Upload attendance CSV for a date</label>
-          <input id="date" type="date" />
-          <input id="csvfile" type="file" accept=".csv" />
-          <button id="uploadBtn" class="btn">Upload CSV</button>
+  <body class="bg-dark centered-viewport">
+    <main class="container md-card fade-in">
+      <header class="appbar">
+        <div class="title">Smart Attendance — Admin</div>
+        <div class="md-actions">
+          <button id="logoutBtn" class="md-btn" title="Logout"><span class="material-icons">logout</span></button>
         </div>
-        <div>
-          <button id="downloadBtn" class="btn ghost">Download CSV</button>
-          <button id="logoutBtn" class="btn danger">Logout</button>
-        </div>
-      </div>
+      </header>
 
-      <h3>Attendance</h3>
-      <div class="row toolbar">
+      <section style="padding:12px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between">
+        <div>
+          <h2 class="accent" style="margin:0">Dashboard</h2>
+          <div id="lastImport" class="muted" style="font-size:0.9em;margin-top:4px">Last import: N/A</div>
+        </div>
+      </section>
+
+      <h3 style="margin:12px 16px 6px;color:var(--md-on-surface)">Attendance</h3>
+      <div class="row toolbar" style="padding:0 16px 12px 16px">
         <label>Limit</label>
-        <input id="limit" type="number" min="1" max="5000" value="100" class="small-input" />
+        <input id="limit" type="number" min="1" max="5000" value="100" class="md-input small-input" />
         <label>Offset</label>
-        <input id="offset" type="number" min="0" value="0" class="small-input" />
-        <button id="prevBtn" class="btn ghost">Prev</button>
-        <button id="nextBtn" class="btn ghost">Next</button>
+        <input id="offset" type="number" min="0" value="0" class="md-input small-input" />
+        <button id="prevBtn" class="md-btn">Prev</button>
+        <button id="nextBtn" class="md-btn">Next</button>
         <div id="pageInfo" class="muted"></div>
       </div>
 
-      <div id="uploadStatus" class="muted status"></div>
+      <div id="uploadStatus" class="muted status" style="padding:0 16px"></div>
 
-      <table id="table" class="table">
-        <thead><tr><th>Name</th><th>ID</th><th>Date</th><th>Status</th></tr></thead>
-        <tbody></tbody>
-      </table>
+      <div style="padding:0 16px 18px 16px">
+        <table id="table" class="table md-card" style="width:100%">
+          <thead><tr><th>Name</th><th>ID</th><th>Date</th><th>Period</th><th>Time</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </main>
+
 
     <script type="module" nonce={nonce}>
       // Dashboard client with pagination and upload result reporting
-      const uploadBtn = document.getElementById('uploadBtn');
-      const csvfile = document.getElementById('csvfile');
-      const dateInput = document.getElementById('date');
       const tableBody = document.querySelector('#table tbody');
-      const downloadBtn = document.getElementById('downloadBtn');
       const logoutBtn = document.getElementById('logoutBtn');
       const limitInput = document.getElementById('limit');
       const offsetInput = document.getElementById('offset');
@@ -65,11 +65,76 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
 
       let totalItems = 0;
 
+      function showToast(msg, timeout=3000){
+        let sb = document.getElementById('snackbar');
+        if(!sb){ sb = document.createElement('div'); sb.id='snackbar'; sb.className='snackbar'; document.body.appendChild(sb); }
+        sb.textContent = msg;
+        sb.classList.add('show');
+        setTimeout(()=> sb.classList.remove('show'), timeout);
+      }
+
+      // modal helper
+      function openEditModal(data, onSave){
+        // backdrop
+        const backdrop = document.createElement('div'); backdrop.className='modal-backdrop';
+        const modal = document.createElement('div'); modal.className='modal';
+        modal.innerHTML = `
+          <h3>Edit Attendance</h3>
+          <label>Name</label>
+          <input id="modal-name" class="md-input" value="${(data.name||'').replace(/"/g,'&quot;')}" />
+          <label>Status</label>
+          <select id="modal-status" class="md-input"><option value="present">present</option><option value="absent">absent</option><option value="late">late</option></select>
+          <div class="modal-actions"><button id="modal-cancel" class="md-btn">Cancel</button><button id="modal-save" class="md-btn primary">Save</button></div>
+        `;
+        backdrop.appendChild(modal);
+        document.body.appendChild(backdrop);
+        const sel = modal.querySelector('#modal-status'); sel.value = data.status || 'present';
+        modal.querySelector('#modal-cancel').addEventListener('click', ()=>{ backdrop.remove(); });
+        modal.querySelector('#modal-save').addEventListener('click', async ()=>{
+          const name = modal.querySelector('#modal-name').value.trim();
+          const status = modal.querySelector('#modal-status').value;
+          try{ await onSave({ ...data, name, status }); backdrop.remove(); showToast('Saved'); } catch(e){ showToast('Save failed'); }
+        });
+        // trap focus (simple)
+        modal.querySelector('#modal-name').focus();
+      }
+
+      function statusBadge(s){
+        const st = String(s||'').toLowerCase();
+        if(st === 'present' || st === 'p' || st === 'present') return `<span class="badge" style="background:rgba(0,200,50,0.08);color:#9aff9a">${escapeHtml(s||'present')}</span>`;
+        if(st === 'absent' || st === 'a' || st === 'absent') return `<span class="badge" style="background:rgba(200,30,30,0.08);color:#ff8b8b">${escapeHtml(s||'absent')}</span>`;
+        if(st === 'late') return `<span class="badge" style="background:rgba(200,150,30,0.06);color:#ffd97a">${escapeHtml(s)}</span>`;
+        return `<span class="badge" style="background:rgba(255,255,255,0.02);color:var(--muted)">${escapeHtml(s||'')}</span>`;
+      }
+
       function render(rows){
         tableBody.innerHTML = '';
         for(const r of rows){
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${escapeHtml(r.name||'')}</td><td>${escapeHtml(r.id||'')}</td><td>${escapeHtml(r.date||'')}</td><td>${escapeHtml(r.status||'')}</td>`;
+          tr.classList.add('slide-up');
+          const name = escapeHtml(r.name||'');
+          const edited = r.edited ? true : false;
+          const sid = escapeHtml(r.id||'');
+          const date = escapeHtml(r.date||'');
+          const period = escapeHtml(r.period||'');
+          const time = escapeHtml(r.time||'');
+          const status = escapeHtml(r.status||'');
+          tr.innerHTML = `<td>${name} ${edited?'<span class="badge" style="background:rgba(255,200,0,0.06);color:#ffd97a;margin-left:8px;font-size:11px">edited</span>':''}</td><td>${sid}</td><td>${date}</td><td>${period}</td><td>${time}</td><td class="status-cell">${statusBadge(status)}</td><td class="actions-cell"></td>`;
+          const actionsCell = tr.querySelector('.actions-cell');
+          const editBtn = document.createElement('button');
+          editBtn.className = 'md-btn ripple';
+          editBtn.innerHTML = `<span class="material-icons">edit</span>`;
+          editBtn.title = 'Edit status';
+          editBtn.addEventListener('click', ()=>{
+            openEditModal(r, async (payload)=>{
+              const statusCell = tr.querySelector('.status-cell');
+              const prev = statusCell.textContent;
+              statusCell.textContent = payload.status;
+              const res = await fetch('/api/attendance_edit.json', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ id: payload.id, date: payload.date, status: payload.status, name: payload.name }) });
+              if(!res.ok){ statusCell.textContent = prev; const j = await res.json().catch(()=>null); showToast(j?.message || 'Failed to update'); }
+            });
+          });
+          actionsCell.appendChild(editBtn);
           tableBody.appendChild(tr);
         }
       }
@@ -81,7 +146,7 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
       async function fetchAttendance(){
         const limit = Number(limitInput.value) || 100;
         const offset = Number(offsetInput.value) || 0;
-        const resp = await fetch(`/api/attendance?limit=${limit}&offset=${offset}`, { credentials: 'same-origin' });
+        const resp = await fetch(`/api/attendance.json?limit=${limit}&offset=${offset}`, { credentials: 'same-origin' });
         if(resp.ok){
           const json = await resp.json();
           totalItems = json.total || 0;
@@ -93,64 +158,9 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
           console.error('Failed to load attendance', resp.status);
         }
       }
-
-      // Simple CSV parser for demo: assumes header with name,id
-      function parseCSV(text){
-        const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-        if(lines.length<1) return [];
-        const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
-        const out = [];
-        for(let i=1;i<lines.length;i++){
-          const cols = lines[i].split(',');
-          const obj = {};
-          headers.forEach((h,idx)=> obj[h]=cols[idx]?.trim());
-          out.push(obj);
-        }
-        return out;
-      }
-
-      uploadBtn?.addEventListener('click', async ()=>{
-        uploadStatus.textContent = '';
-        if(!csvfile.files?.length){ uploadStatus.textContent = 'Select CSV file'; return; }
-        const f = csvfile.files[0];
-        const text = await f.text();
-        const rows = parseCSV(text);
-        const date = dateInput.value || new Date().toISOString().slice(0,10);
-        const payload = rows.map(r=>({ name: r.name||r.fullname||'', id: r.id||r.studentid||'', date, status: 'present' }));
-        const res = await fetch('/api/uploadCSV', { method: 'POST', credentials: 'same-origin', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ rows: payload }) });
-        try{
-          const j = await res.json();
-          if(res.ok){
-            uploadStatus.textContent = `Uploaded — appended ${j.appended || 0} rows.`;
-            // reload first page
-            offsetInput.value = 0;
-            fetchAttendance();
-          } else if(res.status === 401){
-            location.href = '/admin/login';
-          } else {
-            uploadStatus.textContent = j?.message || 'Upload failed';
-          }
-        } catch(e){
-          uploadStatus.textContent = res.ok ? 'Upload done' : 'Upload failed';
-        }
-      });
-
-      downloadBtn?.addEventListener('click', async ()=>{
-        const limit = Number(limitInput.value) || 100;
-        const offset = Number(offsetInput.value) || 0;
-        const res = await fetch(`/api/attendance?format=csv&limit=${limit}&offset=${offset}`, { credentials: 'same-origin' });
-        if(res.ok){
-          const txt = await res.text();
-          const blob = new Blob([txt], { type: 'text/csv' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url; a.download = 'attendance.csv';
-          a.click();
-          URL.revokeObjectURL(url);
-        } else if(res.status === 401){
-          location.href = '/admin/login';
-        } else alert('Failed to download');
-      });
+      
+      // Refresh attendance every 20s
+      setInterval(fetchAttendance, 20000);
 
       prevBtn?.addEventListener('click', ()=>{
         const limit = Number(limitInput.value) || 100;
@@ -170,7 +180,7 @@ const csp = `default-src 'self'; script-src 'self' 'nonce-${nonce}'; style-src '
       });
 
       logoutBtn?.addEventListener('click', async ()=>{
-        await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+        await fetch('/api/logout.json', { method: 'POST', credentials: 'same-origin' });
         location.href = '/admin/login';
       });
 

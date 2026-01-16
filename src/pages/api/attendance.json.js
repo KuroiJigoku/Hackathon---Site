@@ -1,43 +1,26 @@
 // API route: GET /api/attendance
 // Returns JSON array of attendance, or CSV when ?format=csv
-import { jwtVerify } from 'jose';
-import { createSecretKey } from 'crypto';
-import { getAll, isRevoked } from '../../lib/db.js';
+import { getAll, isRevoked, updateStatus } from '../../lib/db.js';
+import fs from 'fs';
+import path from 'path';
 export const prerender = false;
 import buildSecureHeaders from '../../lib/secure-headers.js';
+import { startScheduler } from '../../lib/scheduler.js';
+import { requireAdmin } from '../../lib/auth.js';
 
-const JWT_SECRET = process.env.JWT_SECRET;
-const key = JWT_SECRET ? createSecretKey(Buffer.from(JWT_SECRET)) : null;
+async function fetchJsonNoCache(url){
+  if(!url) return null;
+  const res = await fetch(url, { cache: 'no-store' });
+  if(!res.ok) throw new Error(`Failed to fetch ${url}: ${res.status}`);
+  return await res.json();
+}
 
 // Simple in-memory rate limiter for GET requests (per IP)
 const RATE_MAP = new Map();
 const RATE_WINDOW_MS = 60 * 1000; // 1 minute
 const RATE_MAX = 120; // max 120 requests per minute per IP
 
-function parseCookies(cookieHeader){
-  const out = {};
-  if(!cookieHeader) return out;
-  cookieHeader.split(';').forEach(part => {
-    const idx = part.indexOf('=');
-    if(idx > -1){
-      const name = part.slice(0, idx).trim();
-      const val = part.slice(idx + 1).trim();
-      try { out[name] = decodeURIComponent(val); } catch(e){ out[name] = val; }
-    }
-  });
-  return out;
-}
-
-async function requireAuth(request){
-  if(!key) return false;
-  const cookieHeader = request.headers.get('cookie') || '';
-  const cookies = parseCookies(cookieHeader);
-  const token = cookies['sa_token'];
-  if(!token) return false;
-  try { await jwtVerify(token, key); } catch(e){ return false; }
-  try { if(await isRevoked(token)) return false; } catch(e){ return false; }
-  return true;
-}
+// auth handled via src/lib/auth.js
 
 function rateLimit(ip){
   const now = Date.now();
@@ -61,6 +44,21 @@ function csvEscape(s){
   return str;
 }
 
+function parseCSVRows(text){
+  if(!text) return [];
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(lines.length === 0) return [];
+  const headers = lines[0].split(',').map(h=>h.trim().toLowerCase());
+  const out = [];
+  for(let i=1;i<lines.length;i++){
+    const cols = lines[i].split(',');
+    const obj = {};
+    headers.forEach((h,idx)=> obj[h] = (cols[idx]||'').trim());
+    out.push(obj);
+  }
+  return out;
+}
+
 export async function get({ request }){
   // Ensure JWT secret configured
   if(!key) return new Response(JSON.stringify({ message: 'Server misconfiguration' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
@@ -70,10 +68,102 @@ export async function get({ request }){
     return new Response(JSON.stringify({ message: 'Rate limit exceeded' }), { status: 429, headers: { 'Content-Type': 'application/json' } });
   }
 
-  if(!await requireAuth(request)) return new Response(JSON.stringify({ message: 'unauth' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
+  if(!await requireAdmin(request)) return new Response(JSON.stringify({ message: 'unauth' }), { status: 401, headers: { 'Content-Type': 'application/json' } });
 
-  const rows = getAll();
+  // Start scheduler only when an authenticated admin accesses the attendance API
+  try{ startScheduler(); } catch(e) { /* ignore */ }
+
   const url = new URL(request.url);
+  const source = url.searchParams.get('source') || 'db';
+  const dateParam = url.searchParams.get('date');
+  const periodParam = url.searchParams.get('period');
+
+  let rows = [];
+  const attUrl = process.env.ATTENDANCE_JSON_URL || process.env.JSON_URL || null;
+  const stuUrl = process.env.STUDENTS_JSON_URL || null;
+  if(source === 'csv'){
+    return new Response(JSON.stringify({ message: 'CSV input deprecated; use remote JSON import (ATTENDANCE_JSON_URL/STUDENTS_JSON_URL) or DB.' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  if(attUrl){
+    // Proxy to remote JSON source and normalize
+    try{
+      const attendance = await fetchJsonNoCache(attUrl);
+      let students = null;
+      if(stuUrl) students = await fetchJsonNoCache(stuUrl);
+
+      // Normalize shapes: allow top-level object with arrays, or direct arrays
+      let attArray = attendance;
+      let stuArray = students;
+      if(attendance && !Array.isArray(attendance) && typeof attendance === 'object'){
+        attArray = Array.isArray(attendance.attendance) ? attendance.attendance : attendance.records || attendance.rows || [];
+        stuArray = stuArray || attendance.students || attendance.students_list || null;
+      }
+      if(!Array.isArray(attArray)) throw new Error('Attendance JSON must be an array');
+      if(stuArray && !Array.isArray(stuArray)) stuArray = null;
+
+      // Build students map (register_no -> { name })
+      const studentsMap = new Map();
+      if(Array.isArray(stuArray)){
+        for(const s of stuArray){
+          const id = String(s.register_no || s.registerNo || s.reg_no || s.id || s.studentid || '').trim();
+          if(!id) continue;
+          studentsMap.set(id, { name: s.name || '' });
+        }
+      }
+      // add any ids found in attendance
+      for(const a of attArray){
+        const id = String(a.register_no || a.registerNo || a.reg_no || a.id || a.studentid || '').trim();
+        if(!id) continue;
+        if(!studentsMap.has(id)) studentsMap.set(id, { name: a.name || '' });
+      }
+
+      // Group by date::period and keep latest per id by time
+      const groups = new Map();
+      for(const a of attArray){
+        const date = a.date || a.day || null;
+        const period = a.period || null;
+        const id = String(a.register_no || a.registerNo || a.reg_no || a.id || a.studentid || '').trim();
+        if(!id || !date) continue;
+        const key = `${date}::${period || ''}`;
+        if(!groups.has(key)) groups.set(key, new Map());
+        const g = groups.get(key);
+        const prev = g.get(id);
+        if(!prev) g.set(id, a);
+        else {
+          const prevTime = prev.time || '';
+          const curTime = a.time || '';
+          if(curTime && curTime > prevTime) g.set(id, a);
+        }
+      }
+
+      // Flatten groups into rows and persist to DB; do not overwrite admin-edited rows (updateStatus will skip them)
+      const out = [];
+      for(const [grpKey, map] of groups.entries()){
+        const [date, period] = grpKey.split('::');
+        for(const [id, rec] of map.entries()){
+          const row = { id, name: (rec.name || studentsMap.get(id)?.name || '').trim(), date, period: period || null, time: rec.time || null, status: (String(rec.status||'')||'present') };
+          out.push(row);
+          try{ updateStatus({ id: row.id, date: row.date, period: row.period, time: row.time, status: row.status, name: row.name }); } catch(e) { /* ignore individual failures */ }
+        }
+        for(const [sid, sdet] of studentsMap.entries()){
+          if(!map.has(sid)){
+            const row = { id: sid, name: sdet.name || '', date, period: period || null, time: null, status: 'absent' };
+            out.push(row);
+            try{ updateStatus({ id: row.id, date: row.date, period: row.period, time: row.time, status: row.status, name: row.name }); } catch(e) { }
+          }
+        }
+      }
+
+      // After persisting, read back from DB for consistent rendering
+      rows = getAll();
+    } catch(e){
+      // On failure to fetch remote, fall back to DB if available
+      try{ rows = getAll(); } catch(err){ rows = []; }
+    }
+  } else {
+    rows = getAll();
+  }
   const format = url.searchParams.get('format') || 'json';
   // pagination parameters
   const limit = Math.min( Number(url.searchParams.get('limit') || 1000), 5000 );
