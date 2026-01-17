@@ -1,10 +1,10 @@
 .env
 package-lock.json
-/data/*
+data
 /build
 /node_modules
 /dist
-
+/data
 /.astro
 /.VSCodeCounter
 /.VSCode
@@ -16,4 +16,4 @@ yarn-debug.log*
 yarn-error.log*
 /logs
 *.local
-attendance.db
+/data/attendance.db
