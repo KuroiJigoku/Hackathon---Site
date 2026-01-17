@@ -144,3 +144,23 @@ button:focus, input:focus, textarea:focus, select:focus{outline:3px solid rgba(2
 .card{position:relative}
 .card:before{content:'';position:absolute;inset:-1px;border-radius:13px;padding:1px;background:linear-gradient(90deg,var(--accent),var(--accent-2));-webkit-mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);mask:linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);pointer-events:none;opacity:0.06}
 
+/* Custom styles for dropdown list */
+select {
+  background: rgba(0, 0, 0, 0.8); /* Dark background */
+  color: #fff; /* White text */
+  border: 1px solid rgba(255, 255, 255, 0.04); /* Subtle border */
+  border-radius: 6px; /* Rounded corners */
+  padding: 8px 10px; /* Padding for better appearance */
+  appearance: none; /* Remove default dropdown arrow */
+}
+
+select:focus {
+  outline: 3px solid rgba(255, 59, 59, 0.18); /* Focus outline */
+  outline-offset: 2px;
+}
+
+option {
+  background: rgba(0, 0, 0, 0.8); /* Match dropdown background */
+  color: #fff; /* White text */
+}
+

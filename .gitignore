@@ -1,6 +1,6 @@
 .env
 package-lock.json
-/data
+/data/*
 /build
 /node_modules
 /dist
@@ -16,3 +16,4 @@ yarn-debug.log*
 yarn-error.log*
 /logs
 *.local
+attendance.db
